@@ -1,0 +1,47 @@
+# =================================================================
+# Configuração Principal de Final de Linha (EOL - End of Line)
+# =================================================================
+
+# Regra global:
+# Para todos os arquivos (*), o Git deve autodetectar se são texto (text=auto).
+# Se forem texto, garantir que os finais de linha sejam LF (eol=lf) no repositório.
+# Isso cobre automaticamente .js, .ts, .py, .md, .json, .txt, etc.
+* text=auto eol=lf
+
+# =================================================================
+# Exceções para Scripts
+# =================================================================
+
+# Scripts de Shell devem ser explicitamente LF (bom para clareza).
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Scripts de Batch do Windows DEVEM ser CRLF para funcionar.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# =================================================================
+# Arquivos Binários
+# =================================================================
+
+# Impede o Git de tentar modificar os finais de linha em arquivos binários.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.eot binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+*.mp3 binary
+*.zip binary
+*.gz binary
+*.tar binary
+
+# Lockfiles - Críticos para builds reproduzíveis
+Cargo.lock text eol=lf
+package-lock.json text eol=lf
