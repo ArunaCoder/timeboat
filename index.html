@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Timeboat</title>
+    <!-- Folha servida de `public/`, e não importada pelo TS: no `vite dev` o CSS importado
+         entra como <style> injetado por script, que a CSP `style-src 'self'` recusa. -->
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="app-header">
+        <h1>Timeboat</h1>
+        <p class="tagline">
+          Remove os silêncios de vídeos e áudios. O arquivo novo é salvo na mesma pasta do
+          original, com “(sem silêncio)” no nome — o original não é alterado.
+        </p>
+      </header>
+
+      <div id="tools-banner" class="banner" role="alert" hidden>
+        <span id="tools-banner-text"></span>
+      </div>
+
+      <div class="layout">
+        <section class="work" aria-label="Arquivo">
+          <button id="drop-zone" class="drop-zone" type="button">
+            <svg class="drop-icon" viewBox="0 0 48 48" aria-hidden="true">
+              <path d="M6 24h4M14 16v16M20 20v8M34 12v24M40 18v12M44 22v4" />
+              <path class="drop-icon-gap" d="M24 24h6" />
+            </svg>
+            <span class="drop-title">Arraste um vídeo ou áudio para cá</span>
+            <span class="drop-subtitle">ou clique para escolher no computador</span>
+            <span class="drop-formats">
+              MP4 · MOV · MKV · WEBM · AVI · WMV · MP3 · WAV · M4A · FLAC · OGG · OPUS
+            </span>
+          </button>
+
+          <p id="notice" class="notice" role="status" hidden></p>
+
+          <section id="status" class="status" aria-live="polite" hidden>
+            <div id="status-running" hidden>
+              <p id="running-file" class="status-file"></p>
+              <p id="running-phase" class="status-phase"></p>
+              <div class="progress-row">
+                <progress id="running-progress" max="1"></progress>
+                <span id="running-percent" class="progress-percent"></span>
+              </div>
+              <p class="running-elapsed">
+                Tempo decorrido: <span id="running-elapsed" class="clock">0:00</span>
+              </p>
+              <div id="stop-actions" class="actions">
+                <button id="stop-button" type="button" class="button button-secondary">
+                  Interromper
+                </button>
+              </div>
+              <div id="stop-confirm" class="stop-confirm" role="alertdialog"
+                aria-labelledby="stop-confirm-text" hidden>
+                <p id="stop-confirm-text">
+                  Interromper agora? O que já foi processado será descartado. O arquivo
+                  original não é alterado, e nenhum arquivo incompleto fica na pasta.
+                </p>
+                <div class="actions">
+                  <button id="stop-confirm-button" type="button" class="button button-danger">
+                    Interromper
+                  </button>
+                  <button id="stop-keep-button" type="button" class="button button-secondary">
+                    Continuar processando
+                  </button>
+                </div>
+              </div>
+              <p id="stopping" class="status-phase" hidden>
+                Interrompendo e apagando o arquivo incompleto…
+              </p>
+            </div>
+            <div id="status-result" hidden>
+              <p id="result-title" class="status-title"></p>
+              <div id="result-lines" class="status-lines"></div>
+              <dl id="result-stats" class="stats" hidden></dl>
+              <details id="result-detail" class="status-detail" hidden>
+                <summary>Detalhes técnicos</summary>
+                <pre id="result-detail-text"></pre>
+              </details>
+              <button id="reveal-button" type="button" class="button" hidden>
+                Mostrar na pasta
+              </button>
+            </div>
+          </section>
+        </section>
+
+        <aside class="settings" aria-labelledby="settings-title">
+          <div class="settings-header">
+            <h2 id="settings-title">Configurações</h2>
+            <button id="reset-button" type="button" class="button button-link">
+              Restaurar padrões
+            </button>
+          </div>
+          <form id="settings-form" novalidate>
+            <fieldset id="settings-fieldset">
+              <legend class="visually-hidden">Detecção de silêncio</legend>
+
+              <div class="field">
+                <label for="threshold_db">Filtrar abaixo do nível de som</label>
+                <div class="input-row">
+                  <input id="threshold_db" type="text" inputmode="decimal" autocomplete="off"
+                    spellcheck="false" aria-describedby="threshold_db-help threshold_db-error" />
+                  <span class="unit">dB</span>
+                </div>
+                <p id="threshold_db-help" class="help">
+                  O áudio abaixo deste nível conta como silêncio. Mais perto de zero, mais
+                  coisa é tratada como silêncio.
+                </p>
+                <p id="threshold_db-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="field">
+                <label for="min_silence_secs">Remover silêncios maiores que</label>
+                <div class="input-row">
+                  <input id="min_silence_secs" type="text" inputmode="decimal" autocomplete="off"
+                    spellcheck="false" aria-describedby="min_silence_secs-help min_silence_secs-error" />
+                  <span class="unit">s</span>
+                </div>
+                <p id="min_silence_secs-help" class="help">
+                  Só os silêncios mais longos que isto são removidos; as pausas curtas ficam.
+                </p>
+                <p id="min_silence_secs-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="field">
+                <label for="min_sound_secs">Ignorar detecções menores que</label>
+                <div class="input-row">
+                  <input id="min_sound_secs" type="text" inputmode="decimal" autocomplete="off"
+                    spellcheck="false" aria-describedby="min_sound_secs-help min_sound_secs-error" />
+                  <span class="unit">s</span>
+                </div>
+                <p id="min_sound_secs-help" class="help">
+                  Sons mais curtos que isto no meio do silêncio — um clique, uma tosse — não
+                  interrompem o silêncio. Use 0 para não ignorar nada.
+                </p>
+                <p id="min_sound_secs-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="field">
+                <label for="padding_secs">Margem à esquerda e à direita</label>
+                <div class="input-row">
+                  <input id="padding_secs" type="text" inputmode="decimal" autocomplete="off"
+                    spellcheck="false" aria-describedby="padding_secs-help padding_secs-error" />
+                  <span class="unit">s</span>
+                </div>
+                <p id="padding_secs-help" class="help">
+                  Silêncio mantido de cada lado de cada corte, para a fala não começar nem
+                  terminar colada.
+                </p>
+                <p id="padding_secs-error" class="field-error" hidden></p>
+              </div>
+            </fieldset>
+            <p id="settings-message" class="form-message" role="alert" hidden></p>
+          </form>
+        </aside>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,47 @@
+[package]
+name = "timeboat"
+description = "Remove os silêncios de vídeos e áudios, gravando o resultado na mesma pasta (app Tauri para Windows)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+# `main.rs` invoca `timeboat_lib::run()`; o nome da lib é independente do nome do pacote
+# e não colide com o binário homônimo no `cargo doc` do gate.
+name = "timeboat_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+# Log de diagnóstico (em inglês) no stdout e no diretório de log do app. Em release não
+# há console, então o arquivo é o único rastro de uma falha na máquina de quem usa.
+tauri-plugin-log = "2.9.1"
+log = "0.4.34"
+# O seletor de arquivo nativo, aberto **só** pelo Rust (`ipc::pick_media`): a capability
+# do webview não concede permissão nenhuma deste plugin, então o caminho escolhido nunca
+# atravessa a fronteira IPC.
+tauri-plugin-dialog = "2.7.3"
+# Só a função livre `reveal_item_in_dir`, que abre o Explorer com o arquivo gerado
+# selecionado. O plugin não é registrado no app: sem ele, o webview não ganha comando
+# nenhum de abrir caminho ou URL.
+tauri-plugin-opener = "2.5.5"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# Derive de `Display`/`Error` dos tipos de erro. Já compilado em todo build como
+# dependência do próprio `tauri`, então não acrescenta crate à árvore.
+thiserror = "2.0.20"
+
+[dev-dependencies]
+# Enumeração das variantes de `IpcErrorCode` no teste que gera
+# `src/ipc-error-codes.generated.ts` (vide `src/error.rs`). Só de teste: o derive é
+# `#[cfg_attr(test, …)]`, então o app embarcado não linka a crate.
+strum = { version = "0.28.0", features = ["derive"] }
+
+# Gates de qualidade: a fonte única dos denies é `[workspace.lints]`, no `Cargo.toml`
+# da raiz do repositório.
+[lints]
+workspace = true

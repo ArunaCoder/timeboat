@@ -1,0 +1,60 @@
+[workspace]
+members = ["src-tauri"]
+# Explícito porque manifesto virtual (sem `[package]`) não herda o resolver
+# default da edition — sem esta linha o workspace cairia no resolver v1.
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Gabriel Alcantara <gabriel.b.alcantara@gmail.com>"]
+# Além de impedir a publicação acidental, é o que dispensa o `cargo_common_metadata`
+# do grupo `cargo` abaixo: crate que não se publica não precisa de licença,
+# repositório nem categorias no manifesto.
+publish = false
+
+# ── Gates de qualidade ──────────────────────────────────────────────────────
+# Fonte única dos denies: cada membro herda com `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Links de doc-comment `.rs`: link intra-doc quebrado, link para item privado a
+# partir de doc público e alvo explícito redundante viram erro de build no
+# `cargo doc` do gate.
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+redundant_explicit_links = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Duplicatas de versão no grafo (windows_*, syn 1/2, thiserror 1/2…) são
+# inevitáveis no ecossistema Tauri. A vigilância de duplicatas é do `cargo deny`
+# (deny.toml [bans] multiple-versions = "warn"), fonte única; aqui desligamos o
+# lint do clippy para não manter duas allowlists em sincronia nem quebrar
+# `rs:lint` (que roda com -D warnings) nas duplicatas já toleradas.
+multiple_crate_versions = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+# `unreachable!()` é `panic!` por outro nome: sem este deny ele escaparia do gate.
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+
+# ── Perfil de desenvolvimento ───────────────────────────────────────────────
+# O default de `dev` é `debug = true`, e é esse debuginfo que domina o tamanho de
+# `target/`. `line-tables-only` guarda arquivo e linha — o backtrace continua
+# simbolizado — e descarta o resto. Quem precisar inspecionar variável num
+# depurador pede o debuginfo completo na invocação, com
+# `--config profile.dev.debug=2`, em vez de reverter esta linha.
+[profile.dev]
+debug = "line-tables-only"
+
+# Build script e proc-macro ninguém depura: aqui o debuginfo é custo sem consumidor.
+[profile.dev.build-override]
+debug = 0

@@ -1,0 +1,5 @@
+# ── Limiares de complexidade ────────────────────────────────────────────────
+# Os mesmos do repositório tudolindo, de onde este projeto herda a régua.
+too-many-arguments-threshold = 5
+too-many-lines-threshold = 100
+cognitive-complexity-threshold = 10

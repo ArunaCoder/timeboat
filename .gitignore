@@ -1,0 +1,10 @@
+# Dependências e build do webview
+node_modules
+dist
+
+# Build do Rust/Tauri (o target do workspace mora na raiz)
+/target
+
+# Sistema
+.DS_Store
+Thumbs.db

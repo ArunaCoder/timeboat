@@ -1,0 +1,7 @@
+[toolchain]
+# Versão exata do toolchain, sem triple de host: o host de cada máquina fica na
+# configuração local do rustup, fora do repositório.
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
+# O app é só para Windows: o alvo MSVC é o único que o bundle produz.
+targets = ["x86_64-pc-windows-msvc"]

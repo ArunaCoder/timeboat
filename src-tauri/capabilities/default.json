@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "the main window: core defaults (event listening covers the job events and the drag-and-drop hover) and the app commands; file paths never cross the IPC boundary, since the drop and the file dialog are handled by the Rust side",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-get-settings",
+    "allow-save-settings",
+    "allow-reset-settings",
+    "allow-check-tools",
+    "allow-pick-media",
+    "allow-cancel-job",
+    "allow-current-job",
+    "allow-reveal-output"
+  ]
+}

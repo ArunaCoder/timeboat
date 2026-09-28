@@ -1,0 +1,15 @@
+{
+  "rust-analyzer.linkedProjects": ["Cargo.toml"],
+  // O rust-analyzer confere com o mesmo clippy do gate (`npm run rs:lint`), e não
+  // com o `cargo check` padrão, que não enxerga os lints pedantic/nursery.
+  "rust-analyzer.check.command": "clippy",
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "json.schemas": [
+    {
+      "fileMatch": ["tauri.conf.json"],
+      "url": "https://schema.tauri.app/config/2"
+    }
+  ]
+}

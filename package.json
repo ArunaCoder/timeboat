@@ -1,0 +1,40 @@
+{
+  "name": "timeboat",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Remove os silêncios de vídeos e áudios — app Tauri para Windows (webview Vanilla TS + Vite)",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "tauri": "tauri",
+    "app": "tauri dev",
+    "app:build": "tauri build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "ts:check": "npm run lint && npm run typecheck",
+    "rs:lint": "cargo clippy --workspace --all-targets -- -D warnings",
+    "rs:fmt": "cargo fmt --all --check",
+    "rs:doc": "cargo doc --workspace --no-deps --document-private-items",
+    "rs:check": "npm run rs:lint && npm run rs:fmt && npm run rs:doc",
+    "rs:test": "cargo test --workspace",
+    "check": "npm run ts:check && npm run rs:check",
+    "deny": "cargo deny check",
+    "gate": "npm run check && npm run test && npm run rs:test && npm run build && npm run deny && npm audit --audit-level=high"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.0",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^26.6.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  }
+}
