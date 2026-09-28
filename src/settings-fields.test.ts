@@ -24,6 +24,19 @@ describe("checkField", () => {
     expect(checkField("-1", bounds)).toEqual({ ok: true, value: -1 });
   });
 
+  it("arredonda às três casas que o campo exibe, antes de conferir a faixa", () => {
+    expect(checkField("-40,12345", bounds)).toEqual({
+      ok: true,
+      value: -40.123,
+    });
+    expect(checkField("-0,9996", bounds)).toEqual({ ok: true, value: -1 });
+    // O `toEqual` compara com `Object.is`: o zero negativo não passaria por zero.
+    expect(checkField("-0", { min: 0, max: 1 })).toEqual({
+      ok: true,
+      value: 0,
+    });
+  });
+
   it("diz a faixa quando o número está fora dela", () => {
     expect(checkField("0", bounds)).toEqual({
       ok: false,

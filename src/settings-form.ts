@@ -32,6 +32,8 @@ export class SettingsForm {
   /// O que a tela mostra de válido, gravado ou à espera da pausa.
   #pending: Settings;
   #timer: number | undefined;
+  /// A fila das gravações (vide `#enqueue`); nunca rejeita.
+  #queue: Promise<void> = Promise.resolve();
   readonly #limits: Limits;
   readonly #fields: readonly Field[];
   readonly #fieldset = byId("settings-fieldset", HTMLFieldSetElement);
@@ -96,34 +98,40 @@ export class SettingsForm {
   #flush(): void {
     window.clearTimeout(this.#timer);
     this.#timer = undefined;
-    const snapshot = this.#pending;
-    if (sameSettings(snapshot, this.#saved)) {
-      return;
-    }
-    saveSettings(snapshot).then(
-      (stored) => {
-        this.#saved = stored;
-        // Uma edição feita durante a gravação continua pendente; só a que foi gravada é
-        // trocada pela versão confirmada.
-        if (this.#pending === snapshot) {
-          this.#pending = stored;
-        }
-        this.#showMessage(null);
-      },
-      (error: unknown) => this.#showMessage(describeError(error).text),
-    );
+    this.#enqueue(async () => {
+      // Lido na vez da gravação, e não no pedido: pedidos acumulados atrás de uma gravação
+      // lenta viram uma só, com o valor mais novo.
+      const snapshot = this.#pending;
+      if (sameSettings(snapshot, this.#saved)) {
+        return;
+      }
+      const stored = await saveSettings(snapshot);
+      this.#saved = stored;
+      // Uma edição feita durante a gravação continua pendente; só a que foi gravada é
+      // trocada pela versão confirmada.
+      if (this.#pending === snapshot) {
+        this.#pending = stored;
+      }
+    });
   }
 
   #reset(): void {
     window.clearTimeout(this.#timer);
     this.#timer = undefined;
-    resetSettings().then(
-      (stored) => {
-        this.#saved = stored;
-        this.#pending = stored;
-        this.#fill(stored);
-        this.#showMessage(null);
-      },
+    this.#enqueue(async () => {
+      const stored = await resetSettings();
+      this.#saved = stored;
+      this.#pending = stored;
+      this.#fill(stored);
+    });
+  }
+
+  /// Põe `task` na fila das gravações, que roda uma de cada vez e na ordem. Os comandos do
+  /// Rust rodam em paralelo: duas gravações simultâneas podiam terminar fora de ordem e
+  /// deixar em vigor um valor mais velho que o da tela.
+  #enqueue(task: () => Promise<void>): void {
+    this.#queue = this.#queue.then(task).then(
+      () => this.#showMessage(null),
       (error: unknown) => this.#showMessage(describeError(error).text),
     );
   }

@@ -28,6 +28,8 @@ export const ERROR_MESSAGES: Readonly<Record<IpcErrorCode, string>> = {
   settings_store: "Não foi possível salvar as configurações.",
   no_output: "Ainda não há arquivo gerado para mostrar.",
   reveal: "Não foi possível abrir a pasta do arquivo.",
+  internal:
+    "Algo deu errado de um jeito inesperado. Tente de novo; se continuar, feche e abra o Timeboat.",
 };
 
 /// A frase de quando a falha não veio da fronteira IPC (um bug, não um desfecho previsto).

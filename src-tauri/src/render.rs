@@ -108,6 +108,9 @@ pub fn render_args(
 /// Numeração dos scripts deste processo, para dois nunca disputarem o mesmo nome.
 static NEXT_SCRIPT: AtomicU64 = AtomicU64::new(0);
 
+/// Quantos nomes se tentam antes de desistir da pasta temporária.
+const MAX_SCRIPT_ATTEMPTS: u32 = 100;
+
 /// O grafo de filtros gravado na pasta temporária, apagado quando sai de escopo.
 #[derive(Debug)]
 pub struct ScriptFile(PathBuf);
@@ -118,20 +121,26 @@ impl ScriptFile {
     /// # Errors
     /// [`AppError::TempFile`] se o arquivo não puder ser criado ou escrito.
     pub fn create(contents: &str) -> Result<Self, AppError> {
-        let serial = NEXT_SCRIPT.fetch_add(1, Ordering::Relaxed);
-        let path = env::temp_dir().join(format!("timeboat-{}-{serial}.filtergraph", process::id()));
-        let written = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .and_then(|mut file| file.write_all(contents.as_bytes()));
-        match written {
-            Ok(()) => Ok(Self(path)),
-            Err(error) => {
-                remove_script(&path);
-                Err(AppError::TempFile(error))
-            }
+        for _ in 0..MAX_SCRIPT_ATTEMPTS {
+            let serial = NEXT_SCRIPT.fetch_add(1, Ordering::Relaxed);
+            let path = env::temp_dir().join(format!("timeboat-{}-{serial}.filtergraph", process::id()));
+            let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(file) => file,
+                // Sobra de um processo anterior que teve o mesmo id: não é deste, e não se
+                // apaga — o número seguinte resolve.
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(AppError::TempFile(error)),
+            };
+            let written = file.write_all(contents.as_bytes());
+            // Fechado antes de o `Drop` do script tentar apagá-lo, se a escrita falhou.
+            drop(file);
+            let script = Self(path);
+            return written.map(|()| script).map_err(AppError::TempFile);
         }
+        Err(AppError::TempFile(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "every temporary script name is taken",
+        )))
     }
 
     /// O caminho do arquivo.

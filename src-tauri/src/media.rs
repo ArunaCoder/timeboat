@@ -146,7 +146,7 @@ pub fn accepted_extensions() -> Vec<&'static str> {
 }
 
 /// O que se acrescenta ao nome do arquivo de entrada para nomear o resultado.
-const OUTPUT_TAG: &str = "sem silêncio";
+const OUTPUT_TAG: &str = "TIMEBOATED";
 
 /// A marca do arquivo onde o `ffmpeg` escreve enquanto trabalha.
 const PARTIAL_TAG: &str = "parcial";
@@ -155,8 +155,8 @@ const PARTIAL_TAG: &str = "parcial";
 const MAX_NAME_ATTEMPTS: u32 = 999;
 
 /// Os nomes do resultado e do seu parcial para a tentativa `attempt` (a partir de 1):
-/// `aula (sem silêncio).mp4` e `aula (sem silêncio).parcial.mp4`; da segunda em diante,
-/// `aula (sem silêncio 2).mp4`.
+/// `aula (TIMEBOATED).mp4` e `aula (TIMEBOATED).parcial.mp4`; da segunda em diante,
+/// `aula (TIMEBOATED 2).mp4`.
 fn output_names(stem: &OsStr, attempt: u32, extension: &str) -> (OsString, OsString) {
     let mut base = stem.to_os_string();
     if attempt <= 1 {
@@ -234,7 +234,7 @@ impl Reservation {
     /// [`AppError::OutputFolder`] se a renomeação falhar — e então os dois arquivos são
     /// apagados, como em qualquer desistência.
     pub fn commit(mut self) -> Result<PathBuf, AppError> {
-        fs::rename(&self.partial_path, &self.final_path).map_err(|source| AppError::OutputFolder {
+        rename_patiently(&self.partial_path, &self.final_path).map_err(|source| AppError::OutputFolder {
             folder: self
                 .final_path
                 .parent()
@@ -272,6 +272,29 @@ fn create_new(path: &Path) -> io::Result<bool> {
 const REMOVE_ATTEMPTS: u32 = 10;
 const REMOVE_RETRY_DELAY: Duration = Duration::from_millis(100);
 
+/// Quantas vezes a renomeação final é tentada, no mesmo intervalo: mais que a remoção, porque
+/// desistir dela descarta uma gravação inteira que deu certo.
+const RENAME_ATTEMPTS: u32 = 50;
+
+/// Renomeia `from` para `to`, repetindo pelo mesmo motivo de [`remove_quietly`]: o parcial
+/// que o `ffmpeg` acabou de fechar pode seguir aberto por um instante pelo antivírus ou pelo
+/// indexador, e a renomeação falha com acesso negado.
+fn rename_patiently(from: &Path, to: &Path) -> io::Result<()> {
+    let mut attempt = 1;
+    loop {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound || attempt >= RENAME_ATTEMPTS => {
+                return Err(error);
+            }
+            Err(_) => {
+                attempt += 1;
+                thread::sleep(REMOVE_RETRY_DELAY);
+            }
+        }
+    }
+}
+
 /// Apaga `path` se existir.
 ///
 /// No Windows, o parcial que o `ffmpeg` acabou de fechar pode seguir aberto por um instante
@@ -297,6 +320,10 @@ mod tests {
     use std::ffi::OsStr;
     use std::fs;
     use std::path::Path;
+    #[cfg(windows)]
+    use std::thread;
+    #[cfg(windows)]
+    use std::time::Duration;
 
     use super::{FORMATS, OutputProfile, Reservation, accepted_extensions, output_names};
     use crate::test_support::TestDir;
@@ -336,10 +363,10 @@ mod tests {
     #[test]
     fn output_names_carry_the_tag_and_the_attempt() {
         let (final_name, partial_name) = output_names(OsStr::new("aula 1"), 1, "mp4");
-        assert_eq!(final_name, "aula 1 (sem silêncio).mp4");
-        assert_eq!(partial_name, "aula 1 (sem silêncio).parcial.mp4");
+        assert_eq!(final_name, "aula 1 (TIMEBOATED).mp4");
+        assert_eq!(partial_name, "aula 1 (TIMEBOATED).parcial.mp4");
         let (second, _) = output_names(OsStr::new("aula 1"), 2, "wav");
-        assert_eq!(second, "aula 1 (sem silêncio 2).wav");
+        assert_eq!(second, "aula 1 (TIMEBOATED 2).wav");
     }
 
     /// Um resultado anterior na pasta não é sobrescrito: a reserva pula para o nome seguinte.
@@ -347,25 +374,50 @@ mod tests {
     fn an_existing_output_is_never_overwritten() -> TestResult {
         let dir = TestDir::new("media-reserve")?;
         let input = dir.path().join("aula.mov");
-        let taken = dir.path().join("aula (sem silêncio).mp4");
+        let taken = dir.path().join("aula (TIMEBOATED).mp4");
         fs::write(&taken, "anterior")?;
 
         let reservation = Reservation::reserve(&input, OutputProfile::Mp4)?;
         assert_eq!(
             reservation.partial_path(),
-            dir.path().join("aula (sem silêncio 2).parcial.mp4")
+            dir.path().join("aula (TIMEBOATED 2).parcial.mp4")
         );
         fs::write(reservation.partial_path(), "novo")?;
         let output = reservation.commit()?;
 
-        assert_eq!(output, dir.path().join("aula (sem silêncio 2).mp4"));
+        assert_eq!(output, dir.path().join("aula (TIMEBOATED 2).mp4"));
         assert_eq!(fs::read_to_string(&output)?, "novo");
         assert_eq!(
             fs::read_to_string(&taken)?,
             "anterior",
             "o arquivo anterior tem de ficar intacto"
         );
-        assert!(!dir.path().join("aula (sem silêncio 2).parcial.mp4").exists());
+        assert!(!dir.path().join("aula (TIMEBOATED 2).parcial.mp4").exists());
+        Ok(())
+    }
+
+    /// O parcial travado por um instante — o antivírus examinando o arquivo recém-fechado —
+    /// não faz a gravação inteira se perder: a renomeação espera a trava sair.
+    #[cfg(windows)]
+    #[test]
+    fn a_briefly_locked_partial_is_still_committed() -> TestResult {
+        use std::os::windows::fs::OpenOptionsExt as _;
+
+        let dir = TestDir::new("media-locked")?;
+        let reservation = Reservation::reserve(&dir.path().join("aula.wav"), OutputProfile::Wav)?;
+        fs::write(reservation.partial_path(), "pronto")?;
+        // Sem compartilhamento nenhum, como o antivírus abre: a renomeação falha enquanto dura.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(reservation.partial_path())?;
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            drop(lock);
+        });
+        let output = reservation.commit()?;
+        release.join().map_err(|_| "a thread da trava entrou em pânico")?;
+        assert_eq!(fs::read_to_string(output)?, "pronto");
         Ok(())
     }
 

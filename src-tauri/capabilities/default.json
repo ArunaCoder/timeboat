@@ -1,10 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "the main window: core defaults (event listening covers the job events and the drag-and-drop hover) and the app commands; file paths never cross the IPC boundary, since the drop and the file dialog are handled by the Rust side",
+  "description": "the main window: only event listening from core (the job events and the drag-and-drop hover) and the app commands. Not `core:default`: it grants `core:image:allow-from-path`, which reads any image on disk, and the tray and menu constructors. File paths never cross the IPC boundary, since the drop and the file dialog are handled by the Rust side",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "allow-get-settings",
     "allow-save-settings",
     "allow-reset-settings",

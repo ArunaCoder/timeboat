@@ -18,12 +18,22 @@ export type FieldCheck =
   | { readonly ok: true; readonly value: number }
   | { readonly ok: false; readonly reason: string };
 
+/// `value` com as três casas que o campo exibe (`formatDecimal`), sem o zero negativo.
+function toDisplayPrecision(value: number): number {
+  const rounded = Math.round(value * 1000) / 1000;
+  return rounded === 0 ? 0 : rounded;
+}
+
 /// Confere `text` contra `bounds`: o número, ou a frase que diz o que corrigir.
+///
+/// O número sai arredondado às três casas que o campo exibe: gravar mais precisão do que a
+/// tela mostra faria o valor em vigor diferir do que a pessoa lê.
 export function checkField(text: string, bounds: Bounds): FieldCheck {
-  const value = parseDecimal(text);
-  if (value === null) {
+  const parsed = parseDecimal(text);
+  if (parsed === null) {
     return { ok: false, reason: "Digite um número, como 0,75." };
   }
+  const value = toDisplayPrecision(parsed);
   if (value < bounds.min || value > bounds.max) {
     return {
       ok: false,

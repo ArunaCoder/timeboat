@@ -50,7 +50,7 @@ describe("describeError", () => {
 
 describe("describeOutcome", () => {
   const report = {
-    output_name: "aula (sem silêncio).mp4",
+    output_name: "aula (TIMEBOATED).mp4",
     original_secs: 725.2,
     final_secs: 600.4,
     cut_count: 14,
@@ -63,7 +63,7 @@ describe("describeOutcome", () => {
     expect(text.tone).toBe("success");
     expect(text.canReveal).toBe(true);
     expect(text.lines).toEqual([
-      "Salvo como “aula (sem silêncio).mp4”, na mesma pasta do original.",
+      "Salvo como “aula (TIMEBOATED).mp4”, na mesma pasta do original.",
     ]);
     expect(text.stats).toEqual([
       { label: "O vídeo perdeu", value: "2:05", highlight: true },

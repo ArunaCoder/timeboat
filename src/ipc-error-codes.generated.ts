@@ -20,4 +20,5 @@ export type IpcErrorCode =
   | "invalid_settings"
   | "settings_store"
   | "no_output"
-  | "reveal";
+  | "reveal"
+  | "internal";

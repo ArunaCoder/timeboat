@@ -52,6 +52,8 @@ pub enum IpcErrorCode {
     NoOutput,
     /// O Explorer não abriu a pasta do resultado.
     Reveal,
+    /// Falha que nenhum outro código prevê: um defeito do app, e não do arquivo.
+    Internal,
 }
 
 /// Erro de uso interno, com a causa concreta. Vira [`IpcError`] na fronteira.
@@ -121,6 +123,9 @@ pub enum AppError {
     /// O Explorer não abriu a pasta do resultado.
     #[error("could not reveal the output: {0}")]
     Reveal(String),
+    /// Um defeito do app interrompeu o processamento (um pânico na thread do trabalho).
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 impl AppError {
@@ -143,6 +148,7 @@ impl AppError {
             Self::SettingsStore(_) => IpcErrorCode::SettingsStore,
             Self::NoOutput => IpcErrorCode::NoOutput,
             Self::Reveal(_) => IpcErrorCode::Reveal,
+            Self::Internal(_) => IpcErrorCode::Internal,
         }
     }
 }
@@ -278,7 +284,7 @@ export type IpcErrorCode =
     /// Cada erro interno chega à tela com o código que escolhe a frase certa.
     #[test]
     fn each_app_error_carries_its_code() {
-        let cases: [(AppError, IpcErrorCode); 14] = [
+        let cases: [(AppError, IpcErrorCode); 15] = [
             (AppError::ToolMissing { program: "ffmpeg" }, IpcErrorCode::FfmpegMissing),
             (
                 AppError::ToolSpawn {
@@ -321,6 +327,7 @@ export type IpcErrorCode =
             (AppError::SettingsStore("x".to_owned()), IpcErrorCode::SettingsStore),
             (AppError::NoOutput, IpcErrorCode::NoOutput),
             (AppError::Reveal("x".to_owned()), IpcErrorCode::Reveal),
+            (AppError::Internal("x".to_owned()), IpcErrorCode::Internal),
         ];
         for (error, expected) in cases {
             let ipc = IpcError::from(error);

@@ -19,9 +19,10 @@ async function boot(): Promise<void> {
   // A escuta vem antes da pergunta pelo andamento, para nenhum evento cair no intervalo.
   await onJobEvent((event) => job.apply(event));
   await onDragHover((hovering) => job.setHovering(hovering));
+  const mark = job.mark();
   const running = await currentJob();
   if (running !== null) {
-    job.resume(running);
+    job.resume(running, mark);
   }
   checkTools().catch((error: unknown) => {
     byId("tools-banner-text", HTMLElement).textContent =

@@ -1,6 +1,6 @@
 # Timeboat
 
-App de Windows que remove os silêncios de um vídeo ou áudio. Arraste o arquivo para a janela (ou clique para escolher no Explorer): o resultado é gravado na mesma pasta, com `(sem silêncio)` no nome. O original nunca é alterado, e nenhum arquivo existente é sobrescrito.
+App de Windows que remove os silêncios de um vídeo ou áudio. Arraste o arquivo para a janela (ou clique para escolher no Explorer): o resultado é gravado na mesma pasta, com `(TIMEBOATED)` no fim do nome (`aula.mp4` vira `aula (TIMEBOATED).mp4`). O original nunca é alterado, e nenhum arquivo existente é sobrescrito.
 
 Durante o processamento a janela mostra uma barra de progresso, o tempo decorrido e o botão **Interromper**, que pede confirmação e não deixa arquivo incompleto na pasta. Ao terminar, mostra quanto o vídeo perdeu e quanto o processamento levou, em minutos:segundos.
 

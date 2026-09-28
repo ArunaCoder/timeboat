@@ -181,8 +181,13 @@ impl SettingsStore {
     /// [`AppError::SettingsStore`] se o arquivo não puder ser escrito — as correntes não mudam.
     pub fn save(&self, settings: Settings) -> Result<Settings, AppError> {
         let valid = settings.validate()?;
+        // A trava cobre a gravação: os comandos rodam no pool de threads, e duas gravações
+        // simultâneas, cada uma com a sua metade fora da trava, podiam terminar com o arquivo
+        // dizendo uma coisa e a memória outra (e disputando o mesmo arquivo temporário).
+        let mut current = self.current.lock().unwrap_or_else(PoisonError::into_inner);
         write(&self.path, &valid).map_err(|error| AppError::SettingsStore(error.to_string()))?;
-        *self.current.lock().unwrap_or_else(PoisonError::into_inner) = valid;
+        *current = valid;
+        drop(current);
         Ok(valid)
     }
 }

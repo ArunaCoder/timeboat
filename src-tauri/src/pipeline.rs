@@ -94,10 +94,17 @@ pub fn process(request: &Request<'_>, on_progress: &mut dyn FnMut(Phase, f64)) -
     }
     let share = analysis_share(renders_video(request.profile, &info));
     let mut on_overall = |phase, fraction| on_progress(phase, overall(phase, fraction, share));
-    let Some(stderr) = analyze(request, &info, &mut on_overall)? else {
+    let Some(analysis) = analyze(request, &info, &mut on_overall)? else {
         return Ok(Outcome::Cancelled);
     };
-    let silences = silence::parse_silences(&stderr, info.duration_secs);
+    // A duração do `ffprobe` pode ser estimativa (MP3 VBR sem cabeçalho Xing, contêiner de
+    // gravação interrompida) e ficar aquém da real; o que passasse dela seria cortado como se
+    // não existisse. A análise decodifica o áudio inteiro, e vale a maior das duas.
+    let info = MediaInfo {
+        duration_secs: info.duration_secs.max(analysis.decoded_secs),
+        ..info
+    };
+    let silences = silence::parse_silences(&analysis.stderr, info.duration_secs);
     match timeline::plan(&silences, info.duration_secs, request.settings) {
         Verdict::NothingToRemove => Ok(Outcome::NothingToRemove),
         Verdict::AllSilent => Ok(Outcome::AllSilent),
@@ -125,16 +132,28 @@ fn overall(phase: Phase, fraction: f64, analysis_share: f64) -> f64 {
     }
 }
 
-/// O stderr da análise, ou `None` se ela foi interrompida.
+/// O que a análise relatou.
+struct Analysis {
+    /// O stderr, com os relatos do `silencedetect`.
+    stderr: String,
+    /// Até onde o áudio foi decodificado, em segundos: a duração real do áudio.
+    decoded_secs: f64,
+}
+
+/// A análise do áudio, ou `None` se ela foi interrompida.
 fn analyze(
     request: &Request<'_>,
     info: &MediaInfo,
     on_progress: &mut dyn FnMut(Phase, f64),
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<Analysis>, AppError> {
     let args = silence::analysis_args(request.input, request.settings);
-    let mut report = |position: f64| on_progress(Phase::Analyzing, fraction(position, info.duration_secs));
+    let mut decoded_secs = 0.0_f64;
+    let mut report = |position: f64| {
+        decoded_secs = decoded_secs.max(position);
+        on_progress(Phase::Analyzing, fraction(position, info.duration_secs));
+    };
     match tool::run_with_progress(&args, request.token, &mut report)? {
-        RunOutcome::Completed { stderr } => Ok(Some(stderr)),
+        RunOutcome::Completed { stderr } => Ok(Some(Analysis { stderr, decoded_secs })),
         RunOutcome::Cancelled => Ok(None),
     }
 }
@@ -272,13 +291,13 @@ mod tests {
         let Outcome::Rendered(rendered) = outcome else {
             return Err(format!("esperava o arquivo gravado, veio {outcome:?}").into());
         };
-        assert_eq!(rendered.output, dir.path().join("fala (sem silêncio).wav"));
+        assert_eq!(rendered.output, dir.path().join("fala (TIMEBOATED).wav"));
         assert_eq!(rendered.cut_count, 1);
         assert!(!rendered.video);
         assert!((rendered.final_secs - 2.5).abs() < 0.05, "{rendered:?}");
         let written = probe::probe(&rendered.output)?;
         assert!((written.duration_secs - 2.5).abs() < 0.05, "{written:?}");
-        assert_eq!(file_names(dir.path())?, ["fala (sem silêncio).wav", "fala.wav"]);
+        assert_eq!(file_names(dir.path())?, ["fala (TIMEBOATED).wav", "fala.wav"]);
 
         assert!(ticks.iter().any(|&(phase, _)| phase == Phase::Analyzing), "{ticks:?}");
         assert!(ticks.iter().any(|&(phase, _)| phase == Phase::Rendering), "{ticks:?}");
@@ -350,10 +369,56 @@ mod tests {
         let Outcome::Rendered(rendered) = outcome else {
             return Err(format!("esperava o arquivo gravado, veio {outcome:?}").into());
         };
-        assert_eq!(rendered.output, dir.path().join("aula (sem silêncio).mp4"));
+        assert_eq!(rendered.output, dir.path().join("aula (TIMEBOATED).mp4"));
         let written = probe::probe(&rendered.output)?;
         assert!(written.has_video && written.has_audio, "{written:?}");
         assert!((written.duration_secs - 2.5).abs() < 0.1, "{written:?}");
+        Ok(())
+    }
+
+    /// Um MP3 VBR sem cabeçalho Xing tem a duração **estimada** pela taxa do começo: com
+    /// ruído alto no começo, o `ffprobe` diz perto de metade da duração real. O plano tem de
+    /// valer para o áudio inteiro — ruído de 0 a 10 s, silêncio até 30 s, tom até 40 s —, e
+    /// não sumir com o tom do fim por ele passar da duração estimada.
+    #[test]
+    fn an_underestimated_duration_does_not_drop_the_end() -> TestResult {
+        let dir = TestDir::new("pipeline-vbr")?;
+        let input = dir.path().join("vbr.mp3");
+        let mut args: Vec<OsString> = [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc='if(lt(t,10),random(0)-0.5,if(lt(t,30),0,0.3*sin(2*PI*440*t)))':d=40:s=48000",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "2",
+            "-write_xing",
+            "0",
+        ]
+        .map(OsString::from)
+        .into();
+        args.push(input.clone().into_os_string());
+        let captured = tool::run_captured(Tool::Ffmpeg, &args)?;
+        if !captured.success {
+            return Err(format!("o ffmpeg não sintetizou o MP3: {}", captured.stderr).into());
+        }
+        let probed = probe::probe(&input)?;
+        assert!(probed.duration_secs < 30.0, "o ffprobe deveria subestimar: {probed:?}");
+
+        let outcome = run(&input, OutputProfile::Mp3, &CancelToken::default(), &mut |_, _| {})?;
+        let Outcome::Rendered(rendered) = outcome else {
+            return Err(format!("esperava o arquivo gravado, veio {outcome:?}").into());
+        };
+        assert!((rendered.original_secs - 40.0).abs() < 0.15, "{rendered:?}");
+        // Mantidos: 0 a 10,25 s e 29,75 a 40 s.
+        assert!((rendered.final_secs - 20.5).abs() < 0.15, "{rendered:?}");
+        let written = probe::probe(&rendered.output)?;
+        assert!((written.duration_secs - 20.5).abs() < 0.15, "{written:?}");
         Ok(())
     }
 

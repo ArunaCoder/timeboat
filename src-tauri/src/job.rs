@@ -22,6 +22,8 @@
 //! desfecho, e o [`JobSnapshot`] carrega o tempo decorrido de um processamento em andamento:
 //! a janela que recarrega no meio retoma o cronômetro do ponto certo, e não do zero.
 
+use std::any::Any;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
@@ -275,7 +277,14 @@ fn launch(app: &AppHandle, jobs: &Jobs, job: Job) {
     // não devolve falha de criação de thread para tratar, e o processamento é bloqueante do
     // começo ao fim (processos filhos e disco).
     drop(tauri::async_runtime::spawn_blocking(move || {
-        let event = run(&app, &jobs, &job);
+        // Um pânico no pipeline vira falha como outra qualquer: sem isto o posto nunca seria
+        // liberado, a tela ficaria presa no andamento e todo arquivo seguinte seria recusado
+        // como `busy` até o app reabrir.
+        let event = panic::catch_unwind(AssertUnwindSafe(|| run(&app, &jobs, &job))).unwrap_or_else(|payload| {
+            let error = AppError::Internal(panic_message(payload.as_ref()));
+            log::error!("processing {} panicked: {error}", job.path.display());
+            JobEvent::Failed { error: error.into() }
+        });
         // O posto é liberado antes do desfecho sair: quem soltar outro arquivo ao ver o
         // desfecho já encontra o posto livre.
         jobs.release();
@@ -309,6 +318,15 @@ fn run(app: &AppHandle, jobs: &Jobs, job: &Job) -> JobEvent {
     }
 }
 
+/// O texto de um pânico, quando ele carrega um.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".to_owned())
+}
+
 fn emit(app: &AppHandle, event: &JobEvent) {
     if let Err(error) = app.emit(EVENT, event) {
         log::error!("could not emit the {EVENT} event: {error}");
@@ -324,7 +342,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{JobEvent, JobSnapshot, Jobs, Report, select};
+    use super::{JobEvent, JobSnapshot, Jobs, Report, panic_message, select};
     use crate::error::{AppError, IpcError};
     use crate::media::OutputProfile;
     use crate::pipeline::{Phase, Rendered};
@@ -399,26 +417,34 @@ mod tests {
         Ok(())
     }
 
+    /// O texto do pânico chega ao diagnóstico, venha ele de um literal ou de um `format!`.
+    #[test]
+    fn a_panic_payload_becomes_its_message() {
+        assert_eq!(panic_message(&"boom"), "boom");
+        assert_eq!(panic_message(&"boom 2".to_owned()), "boom 2");
+        assert_eq!(panic_message(&42_u8), "a panic without a message");
+    }
+
     #[test]
     fn the_last_output_is_remembered() {
         let jobs = Jobs::default();
         assert_eq!(jobs.last_output(), None);
-        jobs.record_output(PathBuf::from(r"C:\x\a (sem silêncio).mp4"));
-        assert_eq!(jobs.last_output(), Some(PathBuf::from(r"C:\x\a (sem silêncio).mp4")));
+        jobs.record_output(PathBuf::from(r"C:\x\a (TIMEBOATED).mp4"));
+        assert_eq!(jobs.last_output(), Some(PathBuf::from(r"C:\x\a (TIMEBOATED).mp4")));
     }
 
     /// O resumo leva o nome do arquivo sem a pasta e o tempo de processamento medido.
     #[test]
     fn the_report_names_the_output_and_the_elapsed_time() {
         let rendered = Rendered {
-            output: PathBuf::from(r"C:\aulas\aula (sem silêncio).mp4"),
+            output: PathBuf::from(r"C:\aulas\aula (TIMEBOATED).mp4"),
             original_secs: 725.0,
             final_secs: 600.0,
             cut_count: 3,
             video: true,
         };
         let report = Report::new(&rendered, Duration::from_millis(42_500));
-        assert_eq!(report.output_name, "aula (sem silêncio).mp4");
+        assert_eq!(report.output_name, "aula (TIMEBOATED).mp4");
         assert!((report.elapsed_secs - 42.5).abs() < f64::EPSILON);
         assert!(report.video);
     }
@@ -444,7 +470,7 @@ mod tests {
             (
                 JobEvent::Finished {
                     report: Report {
-                        output_name: "a (sem silêncio).mp4".to_owned(),
+                        output_name: "a (TIMEBOATED).mp4".to_owned(),
                         original_secs: 10.0,
                         final_secs: 4.5,
                         cut_count: 2,
@@ -455,7 +481,7 @@ mod tests {
                 json!({
                     "kind": "finished",
                     "report": {
-                        "output_name": "a (sem silêncio).mp4",
+                        "output_name": "a (TIMEBOATED).mp4",
                         "original_secs": 10.0,
                         "final_secs": 4.5,
                         "cut_count": 2,

@@ -47,6 +47,8 @@ export class JobView {
   #ticker: number | undefined;
   /// O instante, no relógio de `performance.now()`, em que o processamento começou.
   #startedAt = 0;
+  /// Quantos inícios e desfechos chegaram (vide `mark`).
+  #lifecycle = 0;
   readonly #onBusyChange: (busy: boolean) => void;
   readonly #dropZone = byId("drop-zone", HTMLButtonElement);
   readonly #notice = byId("notice", HTMLElement);
@@ -93,13 +95,29 @@ export class JobView {
     this.#dropZone.classList.toggle("is-hovering", hovering && !this.#busy);
   }
 
+  /// Uma marca do ponto atual da sequência de inícios e desfechos, para `resume` saber se
+  /// o instantâneo pedido depois dela já foi superado.
+  mark(): number {
+    return this.#lifecycle;
+  }
+
   /// Retoma a exibição de um processamento já em andamento (a janela recarregou no meio),
   /// com o cronômetro no ponto em que ele está.
-  resume(snapshot: JobSnapshot): void {
+  ///
+  /// `since` é a `mark` tirada antes de pedir o instantâneo. Se um início ou desfecho
+  /// chegou depois dela, a tela já está mais nova que o instantâneo — retomá-lo reabriria o
+  /// andamento de um processamento que terminou, e a tela ficaria presa nele.
+  resume(snapshot: JobSnapshot, since: number): void {
+    if (this.#lifecycle !== since) {
+      return;
+    }
     this.#start(snapshot.file_name, snapshot.elapsed_secs);
   }
 
   apply(event: JobEvent): void {
+    if (event.kind !== "progress" && event.kind !== "rejected") {
+      this.#lifecycle += 1;
+    }
     switch (event.kind) {
       case "started":
         this.#start(event.file_name, 0);
